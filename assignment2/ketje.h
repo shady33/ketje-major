@@ -27,11 +27,11 @@ void ketje_mj_e(unsigned char *cryptogram,
  * Do NOT modify anything above. */
 void md_start(unsigned char *s,unsigned char *I,int i_len);
 
-void md_ss(unsigned char *s,unsigned char *sigma,int sigma_len,int l,int nr);
+void md_ss(unsigned char *Z,unsigned char *s,unsigned char *sigma,int sigma_len,int l,int nr);
 
 void keypack(unsigned char *packed,const unsigned char *key,int key_len,int lenght);
 
-void monkeywrap(int ρ,int nstart,int nstep,int nstride);
+void mw_wrap(unsigned char *cryptogram,unsigned char *tag,unsigned char *A,unsigned char *B,int l);
 
 void monkeyduplex(int r,int nstart,int nstep,int nstride);
 

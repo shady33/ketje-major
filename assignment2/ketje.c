@@ -1,6 +1,7 @@
 #include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
+#include "stdio.h"
 #include "ketje.h"
 #include "keccak.h"
 
@@ -27,36 +28,41 @@ void monkeyduplex(int r,int nstart,int nstep,int nstride)
 
 void md_start(unsigned char *s,unsigned char *I,int i_len)
 {
-    memcpy(s,I,i_len);
-    *(s + i_len) = (char) 0x01;
-    *(s + 199) = (char) 0x80;         // Verify padding rules
+    unsigned char *inter;
+
+    unsigned int d = pad10x1(&inter,1600,i_len);
+
+    concatenate(&s, I, i_len, inter, d);
+
     s = keccak_p_star(s,1600, 12, 8);
+
+    free(inter);
 }
 
 // Step and stride
-void md_ss(unsigned char *s,unsigned char *sigma,int sigma_len,int l,int nr)
+void md_ss(unsigned char *Z,unsigned char *s,unsigned char *sigma,int sigma_len,int l,int nr)
 {
     unsigned char *P;
-    P = calloc(200, sizeof(unsigned char));
-    if (P == NULL)
-        return;
-        
-    for ( int i = 0 ; i < 200 ; i++)
+    unsigned char *inter;
+
+    unsigned int d = pad10x1(&inter,256,sigma_len);
+
+    d = concatenate(&P, sigma, sigma_len, inter, d);
+
+
+    for ( int i = 0 ; i < d ; i++)
     {
         *(s + i) = *(s + i) ^ *(P + i);
     }
 
     s = keccak_p_star(s,1600, nr, 8);
 
-    for ( int i = l ; i < 200 ; i++)
-    {
-        *(s + i) = 0;
-    }
-      
+    memcpy(Z,s,(l/8));
+
     free(P); 
 }
 
-void monkeywrap(int ρ,int nstart,int nstep,int nstride)
+void mw_wrap(unsigned char *cryptogram,unsigned char *tag,unsigned char *A,unsigned char *B,int l)
 {
 
 }
@@ -110,15 +116,25 @@ void ketje_mj_e(unsigned char *cryptogram,
     concatenate(&packed,packed, k_len+16 ,nonce, n_len);
 
     unsigned char *s;
-    s = calloc(200, sizeof(unsigned char));
-    if (s == NULL)
-        return;
 
     md_start(s,packed,(k_len+16+n_len)/8);
 
-    for (unsigned int i = 0 ; i < 200 ; i++)
-        printf("0x%02x ", *(s + i));
-    printf("\n");
+    // for (unsigned int i = 0 ; i < 200 ; i++)
+    //     printf("0x%02x ", *(s + i));
+    // printf("\n");
+
+    for(unsigned int i = 0 ; i < (d_len/256) - 2; i++ )
+    {
+       md_ss(NULL,s,*(data + i),256,0,1);
+    }
+    
+    unsigned char *Z;
+    Z = calloc( 32, sizeof(unsigned char));
+    if (Z == NULL)
+        return;
+
+    md_ss(Z,s,*(data + i),256,0,1);
+
 
 
     free(packed);
