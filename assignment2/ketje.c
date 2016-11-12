@@ -9,23 +9,29 @@
 // Convert a bit length in the corresponding byte length, rounding up.
 #define BYTE_LEN(x) ((x/8)+(x%8?1:0))
 
-
+/* Keypack function
+ * key - encryption key
+ * k_len - lenght of encryption key
+ * length - total length of packed key
+ * packed - output packed key
+ */
 void keypack(unsigned char *packed,const unsigned char *key,int k_len,int length)
 {
-    printf("Key length %d %x\n", k_len+16, length/8);
-    // Concatenate length
+    // Set first byte to byte length for packed
     *packed = length / 8;
     
+    // Copy key into packed    
     memcpy((packed + 1),key,k_len/8);
 
+    // Simple padding i.e. set byte after copied string to 0x01
     *(packed + (k_len+8)/8) = (char) 0x01;
 }
 
-void monkeyduplex(int r,int nstart,int nstep,int nstride)
-{
-
-}
-
+/* MonekyDuplex Start
+ * I - Input string
+ * i_len - lenght of input string
+ * s - output state array
+ */
 void md_start(unsigned char *s,unsigned char *I,int i_len)
 {
     unsigned char *inter;
@@ -33,7 +39,7 @@ void md_start(unsigned char *s,unsigned char *I,int i_len)
 
     unsigned int d = pad10x1(&inter,1600,i_len);
 
-    unsigned long l = concatenate(&inter_2, I, i_len, inter, d);
+    concatenate(&inter_2, I, i_len, inter, d);
 
     inter_2 = keccak_p_star(inter_2,1600, 12, 6);
 
@@ -43,7 +49,11 @@ void md_start(unsigned char *s,unsigned char *I,int i_len)
     free(inter_2);
 }
 
-// Step and stride
+/* MonekyDuplex Step and Stride functions combined
+ * I - Input string
+ * i_len - lenght of input string
+ * s - output state array
+ */
 void md_ss(unsigned char *Z,unsigned char *s,unsigned char *sigma,int sigma_len,int l,int nr)
 {
     unsigned char *P;
@@ -72,9 +82,166 @@ void md_ss(unsigned char *Z,unsigned char *s,unsigned char *sigma,int sigma_len,
     free(P1);
 }
 
-void mw_wrap(unsigned char *cryptogram,unsigned char *tag,unsigned char *A,unsigned char *B,int l)
+/* MonekyWrap Initialize
+ * key - encryption key
+ * k_len - lenght of encryption key
+ * s - output state array
+ */
+void mw_init(unsigned char *s,const unsigned char *key,int k_len,const unsigned char *nonce,int n_len)
+{
+    unsigned char *packed;
+    unsigned char *packed_nonce;
+
+    packed = calloc((k_len+16)/8, sizeof(unsigned char));
+    if (packed == NULL)
+        return;
+
+    // keypack(K, |K| + 16)
+    keypack(packed,key,k_len,k_len+16);
+
+    // keypack(K, |K| + 16) || N
+    concatenate(&packed_nonce,packed, k_len+16 ,nonce, n_len);
+
+    // D.start(keypack(K, |K| + 16)||N) 2 2
+    md_start(s,packed_nonce,k_len+16+n_len);
+
+    free(packed);
+    free(packed_nonce);
+}
+
+void mw_wrap(unsigned char *cryptogram,unsigned char *tag,int t_len,const unsigned char *A,int a_len, const unsigned char *B,int b_len,unsigned char *s)
 {
 
+    // for i = 0 to ∥A∥ − 2 do
+    // D.step(Ai||00, 0)
+    int a_div = a_len/256;
+    int a_mod = a_len%256;
+    int loop_iter = 0;
+    if (a_mod == 0 )
+    {
+        a_div = a_div - 1;
+    }
+
+    if(a_div > 0)
+    {
+        loop_iter = a_div;
+    }else{
+        a_div = 0;
+    }
+
+    unsigned char *a_loop;
+    if (a_len > 256)
+        concatenate_00(&a_loop,A,256);
+    else
+        concatenate_00(&a_loop,A,a_len);
+
+    // Check inside loop
+    for(int i = 0 ; i < loop_iter ; i++ )
+    {
+        md_ss(NULL,s,a_loop,258,0,1);
+        memcpy(a_loop,(A + ((i*256)/8)),32);
+    }
+   
+    unsigned char *inter;
+    // A∥A∥−1||01
+    unsigned long d;
+
+    if ( a_len == 0)
+    {
+        d = concatenate_01(&inter, NULL ,0);
+    }
+    else if(a_mod == 0)
+    {
+        d = concatenate_01(&inter, (A + ((a_div*256)/8)) ,256);
+    }
+    else
+    {
+        d = concatenate_01(&inter, (A + ((a_div*256)/8)) ,a_len%256);
+    }
+
+    // Len(B0)
+    int b0 = b_len/256 ? 256 : b_len%256;
+
+    unsigned char *Z;
+    Z = calloc( b0/8, sizeof(unsigned char));
+    if (Z == NULL)
+        return;
+
+    // Z = D.step(A∥A∥−1||01, |B0|)
+    md_ss(Z,s,inter,d,b0,1);
+
+    // C0 = B0 ⊕ Z
+    for(int i = 0 ; i < b0/8 ; i++)
+    {
+        *(cryptogram + i) = *(B + i) ^ *(Z+i);
+    }
+
+    int b_div = b_len/256;
+    int b_mod = b_len%256;
+    loop_iter = 0;
+    if (b_mod == 0 )
+    {
+        b_div = b_div - 1;
+    }
+
+    if(b_div > 0)
+    {
+        loop_iter = b_div;
+    }else
+    {
+        b_div = 0;
+    }
+
+    unsigned char *b_loop;
+    concatenate_11(&b_loop,B,b0);
+    int b_i_1_len = 0;
+
+    // for i = 0 to ∥B∥ − 2 do
+    // Z = D.step(Bi||11, |Bi+1|)
+    // Ci+1 = Bi+1 ⊕ Z
+    for(int i = 0 ; i < loop_iter ; i++ )
+    {
+        if (i < (b_len / 256) - 1)
+            b_i_1_len = 256;
+        else
+            b_i_1_len = b_len % 256;
+
+        md_ss(Z,s,b_loop,258,b_i_1_len,1);
+
+        int ith = ((i+1) * 256 ) / 8;
+        
+        for(int j = 0 ; j < BYTE_LEN(b_i_1_len); j++)
+        {
+            *(cryptogram + ith + j) = *(B + ith + j) ^ *(Z + j);
+        }
+        memcpy(b_loop,(B + ith),b_i_1_len/8);
+    }
+
+    unsigned char *b_inter_1;
+    
+    if ( b_len == 0)
+    {
+        d = concatenate_10(&b_inter_1, NULL ,0);
+    }else if(b_mod == 0)
+    {
+        d = concatenate_10(&b_inter_1, (B + ((b_div*256)/8)) ,256);
+    }
+    else
+    {
+        d = concatenate_10(&b_inter_1, (B + ((b_div*256)/8)) ,b_len%256);
+    }
+
+    // T = D.stride(B∥B∥−1||10, ρ)
+    md_ss(tag,s,b_inter_1,d,256,6);
+
+    // While loop may not be needed
+
+    // Freeing
+    free(b_inter_1);
+    free(b_loop);
+    free(Z);
+    free(inter);
+    free(a_loop);
 }
 
 /* Perform the Ketje Major authenticated encryption operation on a message.
@@ -107,96 +274,20 @@ void ketje_mj_e(unsigned char *cryptogram,
      *   n_step   = 1
      *   n_stride = 6
      */
-    // Assuming b = 1600 bits -- Verify 
 
     /* Implement this function */
-    // monkeywrap(256,12,1,6);
 
-    unsigned char *packed;
-    unsigned char *packed_nonce;
-
-    packed = calloc((k_len+16)/8, sizeof(unsigned char));
-    if (packed == NULL)
-        return;
-
-    // keypack(K, |K| + 16)
-    keypack(packed,key,k_len,k_len+16);
-
-    // keypack(K, |K| + 16) || N
-    concatenate(&packed_nonce,packed, k_len+16 ,nonce, n_len);
-    
+    // State array of 1600 bits
     unsigned char *s;
     s = calloc( 200, sizeof(unsigned char));
     if (s == NULL)
         return;
 
-    // D.start(keypack(K, |K| + 16)||N) 2 2
-    md_start(s,packed_nonce,k_len+16+n_len);
+    // MonkeyWrap Initialize
+    mw_init(s,key,k_len,nonce,n_len);
 
-    // for i = 0 to ∥A∥ − 2 do
-    // D.step(Ai||00, 0)
+    // MonekyWrap
+    mw_wrap(cryptogram,tag,t_len, header,h_len,data,d_len,s);
 
-    int loop_iter = ((h_len/256) - 2);
-    if (loop_iter < 0)
-        loop_iter = 0;
-
-    // Check inside loop concatenate nonesnse left
-    for(unsigned int i = 0 ; i < loop_iter ; i++ )
-    {
-       md_ss(NULL,s,*(header + (i*256)/8),264,0,1);
-    }
-
-    unsigned char *inter;
-    // A∥A∥−1||01
-    unsigned long d = concatenate_01(&inter, (header + (h_len/256) - 1),h_len%256);
-
-    // Len(B0)
-    int b0 = d_len/256 ? 256 : d_len%256;
-
-    unsigned char *Z;
-    Z = calloc( b0/8, sizeof(unsigned char));
-    if (Z == NULL)
-        return;
-
-    // Z = D.step(A∥A∥−1||01, |B0|)
-    md_ss(Z,s,inter,d,b0,1);
-
-    printf("Printing after thing\n");
-    for(int i = 0 ; i < 200 ; i++)
-        printf("%02x ", *(s+i));
-    printf("\n");
-
-    // C0 = B0 ⊕ Z
-    for(int i = 0 ; i < b0/8 ; i++)
-        *(cryptogram + i) = *(data + i) ^ *(Z+i);
-
-    loop_iter = ((d_len/256) - 2);
-
-    if (loop_iter < 0)
-        loop_iter = 0;
-
-    // for i = 0 to ∥B∥ − 2 do
-    // Z = D.step(Bi||11, |Bi+1|)
-    // Ci+1 = Bi+1 ⊕ Z    
-    for(unsigned int i = 0 ; i < loop_iter ; i++ )
-    {
-       md_ss(NULL,s,*(header + (i*256)/8),264,0,1);
-    }
-    
-    unsigned char *b_inter_1;
-    d = concatenate_10(&b_inter_1, (data + ((d_len/256) - (d_len%256?0:1))) ,d_len%256);
-
-    // T = D.stride(B∥B∥−1||10, ρ)
-    md_ss(tag,s,b_inter_1,d,256,6);
-
-    // While loop may not be needed
-    printf("Tag:\n");
-    for(int i = 0 ; i < t_len/8 ; i++)
-        printf("0x%02x " , *(tag + i));
-    printf("\n");
-
-    free(packed);
     free(s);
-
-    return;
 }

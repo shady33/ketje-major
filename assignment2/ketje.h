@@ -31,8 +31,8 @@ void md_ss(unsigned char *Z,unsigned char *s,unsigned char *sigma,int sigma_len,
 
 void keypack(unsigned char *packed,const unsigned char *key,int key_len,int lenght);
 
-void mw_wrap(unsigned char *cryptogram,unsigned char *tag,unsigned char *A,unsigned char *B,int l);
+void mw_init(unsigned char *s,const unsigned char *key,int k_len,const unsigned char *nonce,int n_len);
 
-void monkeyduplex(int r,int nstart,int nstep,int nstride);
+void mw_wrap(unsigned char *cryptogram,unsigned char *tag,int t_len,const unsigned char *A,int a_len,const unsigned char *B,int b_len,unsigned char *s);
 
 #endif				/* KETJE_H */
