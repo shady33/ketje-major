@@ -129,7 +129,6 @@ void mw_init(unsigned char *s,const unsigned char *key,int k_len,const unsigned 
  */
 void mw_wrap(unsigned char *cryptogram,unsigned char *tag,int t_len,const unsigned char *A,int a_len, const unsigned char *B,int b_len,unsigned char *s)
 {
-
     // Calculate a_div,a_mod and loop_iter for A
     int a_div = a_len/256;
     int a_mod = a_len%256;
@@ -246,9 +245,16 @@ void mw_wrap(unsigned char *cryptogram,unsigned char *tag,int t_len,const unsign
     }
 
     // T = D.stride(b_inter_1, 256)
-    md_ss(tag,s,b_inter_1,d,256,6);
+    unsigned char *tag_inter;
+    tag_inter = calloc(32,sizeof(unsigned char));
+    if(tag_inter == NULL)
+        return;
+
+    md_ss(tag_inter,s,b_inter_1,d,256,6);
 
     // While loop not needed since tag is 256 bits from previous line
+
+    memcpy(tag,tag_inter,t_len/8);
 
     // Freeing
     free(b_inter_1);
@@ -256,6 +262,7 @@ void mw_wrap(unsigned char *cryptogram,unsigned char *tag,int t_len,const unsign
     free(Z);
     free(inter);
     free(a_loop);
+    free(tag_inter);
 }
 
 /* Perform the Ketje Major authenticated encryption operation on a message.
