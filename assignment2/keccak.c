@@ -41,7 +41,7 @@ unsigned char *keccak_p_star(unsigned char *S, unsigned long b, int nr, int l)
         iota(a,ir);
         pi(a);
     }
-    return a;
+    return S;
 }
 
 /* Copy n bits from a buffer to another.

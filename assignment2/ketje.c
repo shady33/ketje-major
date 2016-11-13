@@ -37,14 +37,19 @@ void md_start(unsigned char *s,unsigned char *I,int i_len)
     unsigned char *inter;
     unsigned char *inter_2;
 
+    // pad10*1[1600](i_len)
     unsigned int d = pad10x1(&inter,1600,i_len);
 
+    // inter_2 = I || pad10*1[1600](i_len)
     concatenate(&inter_2, I, i_len, inter, d);
 
+    // keccack_p*(inter_2)
     inter_2 = keccak_p_star(inter_2,1600, 12, 6);
 
+    // s = inter_2[0:200]
     memcpy(s,inter_2,200);
 
+    // Freeing
     free(inter);
     free(inter_2);
 }
@@ -60,23 +65,30 @@ void md_ss(unsigned char *Z,unsigned char *s,unsigned char *sigma,int sigma_len,
     unsigned char *inter;
     unsigned char *P1;
 
+    // pad10*1[260](sigma_len)
     unsigned int d = pad10x1(&inter,260,sigma_len);
 
+    // sigma || pad10*1[260](sigma_len)
     d = concatenate(&P, sigma, sigma_len, inter, d);
 
     unsigned char zeroes[] = { 0x00 };
 
-    d = concatenate(&P1, P, d, zeroes, 4);
+    // concatenate 4 bits of zero to round off to 264 bits(33 bytes)
+    concatenate(&P1, P, d, zeroes, 4);
 
     for ( int i = 0 ; i < 33 ; i++ )
     {
+        // S = S ^ P
         *(s + i) = *(s + i) ^ *(P1 + i);
     }
 
+    // keccack_p*(s)
     s = keccak_p_star(s,1600, nr, 6);
 
+    // Z = s[0:(l/8)]
     memcpy(Z,s,(l/8));
 
+    // Freeing
     free(inter);
     free(P); 
     free(P1);
@@ -102,64 +114,66 @@ void mw_init(unsigned char *s,const unsigned char *key,int k_len,const unsigned 
     // keypack(K, |K| + 16) || N
     concatenate(&packed_nonce,packed, k_len+16 ,nonce, n_len);
 
-    // D.start(keypack(K, |K| + 16)||N) 2 2
+    // D.start(keypack(K, |K| + 16)||N))
     md_start(s,packed_nonce,k_len+16+n_len);
 
+    // Freeing
     free(packed);
     free(packed_nonce);
 }
 
+/* MonekyWrap Wrap
+ * key - encryption key
+ * k_len - lenght of encryption key
+ * s - output state array
+ */
 void mw_wrap(unsigned char *cryptogram,unsigned char *tag,int t_len,const unsigned char *A,int a_len, const unsigned char *B,int b_len,unsigned char *s)
 {
 
-    // for i = 0 to ∥A∥ − 2 do
-    // D.step(Ai||00, 0)
+    // Calculate a_div,a_mod and loop_iter for A
     int a_div = a_len/256;
     int a_mod = a_len%256;
     int loop_iter = 0;
     if (a_mod == 0 )
-    {
         a_div = a_div - 1;
-    }
 
     if(a_div > 0)
-    {
         loop_iter = a_div;
-    }else{
+    else
         a_div = 0;
-    }
 
+    // a_loop = A[0]||00
     unsigned char *a_loop;
     if (a_len > 256)
         concatenate_00(&a_loop,A,256);
     else
         concatenate_00(&a_loop,A,a_len);
 
-    // Check inside loop
+    // for i = 0 to ||A|| − 2 do
+    //      D.step(a_loop, 0)
+    //      a_loop = A[i+1]
     for(int i = 0 ; i < loop_iter ; i++ )
-    {
+    {   
         md_ss(NULL,s,a_loop,258,0,1);
         memcpy(a_loop,(A + ((i*256)/8)),32);
     }
    
     unsigned char *inter;
-    // A∥A∥−1||01
     unsigned long d;
 
+    // (last block of A)||01
     if ( a_len == 0)
     {
+        // A is empty string
         d = concatenate_01(&inter, NULL ,0);
-    }
-    else if(a_mod == 0)
-    {
-        d = concatenate_01(&inter, (A + ((a_div*256)/8)) ,256);
     }
     else
     {
-        d = concatenate_01(&inter, (A + ((a_div*256)/8)) ,a_len%256);
+        // B is not a empty string
+        d = concatenate_01(&inter, (A + ((a_div*256)/8)) ,(a_mod == 0 ? 256 : a_mod));
     }
 
-    // Len(B0)
+    // Len(B[0])
     int b0 = b_len/256 ? 256 : b_len%256;
 
     unsigned char *Z;
@@ -167,53 +181,54 @@ void mw_wrap(unsigned char *cryptogram,unsigned char *tag,int t_len,const unsign
     if (Z == NULL)
         return;
 
-    // Z = D.step(A∥A∥−1||01, |B0|)
+    // Z = D.step(inter, |B0|)
     md_ss(Z,s,inter,d,b0,1);
 
-    // C0 = B0 ⊕ Z
+    // C0 = B0 ^ Z
     for(int i = 0 ; i < b0/8 ; i++)
     {
         *(cryptogram + i) = *(B + i) ^ *(Z+i);
     }
 
+     // Calculate b_div,b_mod and loop_iter for B
     int b_div = b_len/256;
     int b_mod = b_len%256;
     loop_iter = 0;
     if (b_mod == 0 )
-    {
         b_div = b_div - 1;
-    }
 
     if(b_div > 0)
-    {
         loop_iter = b_div;
-    }else
-    {
+    else
         b_div = 0;
-    }
 
+    // b_loop = B[0] || 11
     unsigned char *b_loop;
     concatenate_11(&b_loop,B,b0);
+    
+    // Lenght of B[i+1]th block
     int b_i_1_len = 0;
 
-    // for i = 0 to ∥B∥ − 2 do
-    // Z = D.step(Bi||11, |Bi+1|)
-    // Ci+1 = Bi+1 ⊕ Z
+    // for i = 0 to ||B|| − 2 do
     for(int i = 0 ; i < loop_iter ; i++ )
     {
+        // Length of (i+1)th block
         if (i < (b_len / 256) - 1)
             b_i_1_len = 256;
         else
             b_i_1_len = b_len % 256;
 
+        // Z = D.step(b_loop, |Bi+1|) 
         md_ss(Z,s,b_loop,258,b_i_1_len,1);
 
         int ith = ((i+1) * 256 ) / 8;
         
+        // Ci+1 = Bi+1 ⊕ Z
         for(int j = 0 ; j < BYTE_LEN(b_i_1_len); j++)
         {
             *(cryptogram + ith + j) = *(B + ith + j) ^ *(Z + j);
         }
+        // copy b_i_1_len bits of B to b_loop for next loop
         memcpy(b_loop,(B + ith),b_i_1_len/8);
     }
 
@@ -221,20 +236,19 @@ void mw_wrap(unsigned char *cryptogram,unsigned char *tag,int t_len,const unsign
     
     if ( b_len == 0)
     {
+        // B is empty string
         d = concatenate_10(&b_inter_1, NULL ,0);
-    }else if(b_mod == 0)
-    {
-        d = concatenate_10(&b_inter_1, (B + ((b_div*256)/8)) ,256);
     }
     else
     {
-        d = concatenate_10(&b_inter_1, (B + ((b_div*256)/8)) ,b_len%256);
+        // B is not empty string
+        d = concatenate_10(&b_inter_1, (B + ((b_div*256)/8)) ,(b_mod == 0 ? 256 : b_mod));
     }
 
-    // T = D.stride(B∥B∥−1||10, ρ)
+    // T = D.stride(b_inter_1, 256)
     md_ss(tag,s,b_inter_1,d,256,6);
 
-    // While loop may not be needed
+    // While loop not needed since tag is 256 bits from previous line
 
     // Freeing
     free(b_inter_1);
@@ -286,8 +300,9 @@ void ketje_mj_e(unsigned char *cryptogram,
     // MonkeyWrap Initialize
     mw_init(s,key,k_len,nonce,n_len);
 
-    // MonekyWrap
+    // MonekyWrap Wrap
     mw_wrap(cryptogram,tag,t_len, header,h_len,data,d_len,s);
 
+    // Freeing
     free(s);
 }
