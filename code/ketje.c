@@ -55,9 +55,12 @@ void md_start(unsigned char *s,unsigned char *I,int i_len)
 }
 
 /* MonekyDuplex Step and Stride functions combined
- * I - Input string
- * i_len - lenght of input string
- * s - output state array
+ * sigma - sigma input string
+ * sigma_len - lenght of sigma input string
+ * s - input state array
+ * l - output length for Z
+ * nr - Step = 1 / Stride = 6
+ * Z - output string
  */
 void md_ss(unsigned char *Z,unsigned char *s,unsigned char *sigma,int sigma_len,int l,int nr)
 {
@@ -97,6 +100,8 @@ void md_ss(unsigned char *Z,unsigned char *s,unsigned char *sigma,int sigma_len,
 /* MonekyWrap Initialize
  * key - encryption key
  * k_len - lenght of encryption key
+ * nonce - nonce string
+ * n_len - lenght of nonce
  * s - output state array
  */
 void mw_init(unsigned char *s,const unsigned char *key,int k_len,const unsigned char *nonce,int n_len)
@@ -123,9 +128,14 @@ void mw_init(unsigned char *s,const unsigned char *key,int k_len,const unsigned 
 }
 
 /* MonekyWrap Wrap
- * key - encryption key
- * k_len - lenght of encryption key
- * s - output state array
+ * crpytogram - ouput cryptogram
+ * tag - output tag string
+ * s - input state array
+ * t_len - length of tag
+ * A - input A string
+ * a_len - length of A string
+ * B - input B string
+ * b_len - length of B string
  */
 void mw_wrap(unsigned char *cryptogram,unsigned char *tag,int t_len,const unsigned char *A,int a_len, const unsigned char *B,int b_len,unsigned char *s)
 {
@@ -252,28 +262,23 @@ void mw_wrap(unsigned char *cryptogram,unsigned char *tag,int t_len,const unsign
 
     md_ss(tag_inter,s,b_inter_1,d,256,6);
 
-    if (t_len <= 256)
+    if (t_len > 256)
     {
         int tag_len = 256;
-        unsigned char *zero_Z;
-        zero_Z = calloc(32,sizeof(unsigned char));
-        if(zero_Z == NULL)
-            return;
+        memcpy(tag,tag_inter,tag_len/8);
 
         // While loop
-
         while (tag_len < t_len)
         {   
-            md_ss(zero_Z,s,0,0,256,1);
-            memcpy((tag+(tag_len/8)),zero_Z,32);
+            md_ss(tag_inter,s,0,0,256,1);
+            memcpy((tag+(tag_len/8)),tag_inter,((t_len - tag_len) > 256 ) ? 32 : BYTE_LEN(t_len - tag_len));
             tag_len += 256;       
         };
-
-        free(zero_Z);
     }
-
-
-    memcpy(tag,tag_inter,t_len/8);
+    else
+    {
+        memcpy(tag,tag_inter,t_len/8);
+    }
 
     // Freeing
     free(b_inter_1);

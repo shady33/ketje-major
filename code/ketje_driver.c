@@ -18,10 +18,6 @@ int main(void)
 	};
 	ketje_mj_e(NULL, t, 128, NULL, 0, NULL, 0, NULL, 0, NULL, 0);
 	result = memcmp(t, tag_0, 16) ? 1 : 0;
-	// for (int i = 0; i < 16; ++i)
-	// {
-	// 	printf("0x%x 0x%x %d \n", tag_0[i],*(t+i),memcmp(t,tag_0,i));
-	// }
 	printf("%s\n", result ? "FAIL" : "PASS");
 	overall |= result;
 	/* Test 1: empty plaintext, 16B add. plaintext */
