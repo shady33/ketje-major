@@ -252,7 +252,26 @@ void mw_wrap(unsigned char *cryptogram,unsigned char *tag,int t_len,const unsign
 
     md_ss(tag_inter,s,b_inter_1,d,256,6);
 
-    // While loop not needed since tag is 256 bits from previous line
+    if (t_len <= 256)
+    {
+        int tag_len = 256;
+        unsigned char *zero_Z;
+        zero_Z = calloc(32,sizeof(unsigned char));
+        if(zero_Z == NULL)
+            return;
+
+        // While loop
+
+        while (tag_len < t_len)
+        {   
+            md_ss(zero_Z,s,0,0,256,1);
+            memcpy((tag+(tag_len/8)),zero_Z,32);
+            tag_len += 256;       
+        };
+
+        free(zero_Z);
+    }
+
 
     memcpy(tag,tag_inter,t_len/8);
 
