@@ -311,7 +311,7 @@ void pi( uint64_t *a )
 }
 
 /* Perform the chi(A) algorithm
- * A - input state array
+ * a - input state array
  */
 void chi( uint64_t *a)
 {

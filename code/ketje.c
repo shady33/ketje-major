@@ -333,7 +333,7 @@ void ketje_mj_e(unsigned char *cryptogram,
 
     // MonekyWrap Wrap
     mw_wrap(cryptogram,tag,t_len, header,h_len,data,d_len,s);
-
+    
     // Freeing
     free(s);
 }
